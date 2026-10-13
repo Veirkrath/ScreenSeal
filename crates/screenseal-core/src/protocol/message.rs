@@ -29,3 +29,19 @@ impl Message {
         Ok(message)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_print_encoded() {
+        let hello = Message::Hello { version: 1 };
+        let hello_bytes = hello.encode().unwrap();
+        println!("Hello bytes: {:?}", hello_bytes);
+
+        let ack = Message::HelloAck { version: 1 };
+        let ack_bytes = ack.encode().unwrap();
+        println!("HelloAck bytes: {:?}", ack_bytes);
+    }
+}
