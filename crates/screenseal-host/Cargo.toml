@@ -5,3 +5,6 @@ edition = "2024"
 
 [dependencies]
 screenseal-core = { path = "../screenseal-core" }
+eframe = { version = "0.31", features = ["default"] }
+egui = "0.31"
+egui_extras = { version = "0.31", features = ["image"] }

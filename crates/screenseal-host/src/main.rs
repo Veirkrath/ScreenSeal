@@ -1,124 +1,199 @@
 mod transport;
+mod ui;
 
-use screenseal_core::protocol::message::Message;
-use std::net::TcpStream;
-use std::thread;
-use std::time::Duration;
+use eframe::{egui, NativeOptions};
+use egui::{Color32, Frame, Margin, RichText, ScrollArea, Stroke, Vec2, ViewportBuilder};
 
-use transport::tcp::{
-    enviar_mensaje,
-    iniciar_servidor,
-    recibir_mensaje,
+use ui::{
+    state::{ActiveTab, AppState},
+    theme::*,
+    views::{
+        devices::{DevicesState, render as render_devices},
+        performance::render as render_performance,
+        quick_connect::render as render_quick_connect,
+        virtual_monitors::{VirtualMonitorsState, render as render_virtual_monitors},
+    },
+    widgets::{nav_tab, pro_badge, status_badge},
 };
 
-const VERSION_PROTOCOLO: u8 = 1;
+// ─── App principal ────────────────────────────────────────────────────────────
 
-fn servidor() {
-    let listener =
-        iniciar_servidor("127.0.0.1:7878")
-            .expect("No se pudo iniciar el servidor");
+struct ScreenSealApp {
+    state:            AppState,
+    vm_state:         VirtualMonitorsState,
+    devices_state:    DevicesState,
+}
 
-    println!("Host escuchando en 127.0.0.1:7878");
+impl Default for ScreenSealApp {
+    fn default() -> Self {
+        Self {
+            state:         AppState::default(),
+            vm_state:      VirtualMonitorsState::default(),
+            devices_state: DevicesState::default(),
+        }
+    }
+}
 
-    let (mut stream, direccion) =
-        listener.accept()
-            .expect("No se pudo aceptar la conexión");
+impl eframe::App for ScreenSealApp {
+    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // Estilo global
+        apply_global_style(ctx);
 
-    println!("Cliente conectado: {}", direccion);
+        // ── Top bar ───────────────────────────────────────────────────────────
+        egui::TopBottomPanel::top("top_bar")
+            .exact_height(46.0)
+            .frame(
+                Frame::new()
+                    .fill(BG_CARD)
+                    .inner_margin(Margin::symmetric(16, 8))
+                    .stroke(Stroke::new(1.0, BORDER_SUBTLE)),
+            )
+            .show(ctx, |ui| {
+                ui.horizontal(|ui| {
+                    // Logo
+                    ui.label(RichText::new("ScreenSeal").color(TEXT_PRIMARY).size(15.0).strong());
+                    pro_badge(ui);
+                    ui.label(RichText::new("DESKTOP PRO").color(TEXT_MUTED).size(9.0));
 
-    // 1. Enviar saludo al cliente
-    let hello = Message::Hello {
-        version: VERSION_PROTOCOLO,
+                    ui.add_space(20.0);
+
+                    // Tabs de navegación
+                    let tabs = [
+                        (ActiveTab::QuickConnect,      "Conexión Rápida"),
+                        (ActiveTab::VirtualMonitors,   "Monitores Virtuales"),
+                        (ActiveTab::Performance,       "Rendimiento"),
+                        (ActiveTab::Devices,           "Dispositivos"),
+                    ];
+                    for (tab, label) in &tabs {
+                        if nav_tab(ui, label, self.state.active_tab == *tab).clicked() {
+                            self.state.active_tab = tab.clone();
+                        }
+                        ui.add_space(2.0);
+                    }
+
+                    // Derecha: badges de enlace + avatar
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        // Avatar
+                        Frame::new()
+                            .fill(ACCENT_PURPLE)
+                            .corner_radius(18.0)
+                            .inner_margin(Margin::same(6))
+                            .show(ui, |ui| {
+                                ui.label(RichText::new("U").color(Color32::WHITE).size(13.0).strong());
+                            });
+                        ui.add_space(8.0);
+                        status_badge(ui, "ENLACE USB LISTO", GREEN_DOT, GREEN_STABLE);
+                        ui.add_space(8.0);
+                        status_badge(ui, "ENLACE USB LISTO", GREEN_DOT, GREEN_STABLE);
+                    });
+                });
+            });
+
+        // ── Status bar inferior ────────────────────────────────────────────────
+        egui::TopBottomPanel::bottom("status_bar")
+            .exact_height(26.0)
+            .frame(
+                Frame::new()
+                    .fill(BG_CARD)
+                    .inner_margin(Margin::symmetric(16, 4))
+                    .stroke(Stroke::new(1.0, BORDER_SUBTLE)),
+            )
+            .show(ctx, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label(
+                        RichText::new(format!(
+                            "Motor H.265 Ultra-Low Latency  |  Buffers: {} frames  |  Cifrado TLS 1.3 Local",
+                            self.state.buffers
+                        ))
+                        .color(TEXT_MUTED)
+                        .size(10.5),
+                    );
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        ui.label(
+                            RichText::new("● ScreenSeal v2.4.0-pro (Build 8821)")
+                                .color(GREEN_DOT)
+                                .size(10.5),
+                        );
+                    });
+                });
+            });
+
+        // ── Panel central (contenido) ─────────────────────────────────────────
+        egui::CentralPanel::default()
+            .frame(Frame::new().fill(BG_DEEP).inner_margin(Margin::same(16)))
+            .show(ctx, |ui| {
+                ScrollArea::vertical().show(ui, |ui| {
+                    match self.state.active_tab {
+                        ActiveTab::QuickConnect =>
+                            render_quick_connect(ui, &mut self.state),
+                        ActiveTab::VirtualMonitors =>
+                            render_virtual_monitors(ui, &mut self.vm_state),
+                        ActiveTab::Performance =>
+                            render_performance(
+                                ui,
+                                self.state.fps,
+                                self.state.latency_ms,
+                                self.state.dropouts,
+                                self.state.buffers,
+                            ),
+                        ActiveTab::Devices =>
+                            render_devices(ui, &mut self.devices_state),
+                    }
+                });
+            });
+    }
+}
+
+// ─── Estilo global ────────────────────────────────────────────────────────────
+
+fn apply_global_style(ctx: &egui::Context) {
+    let mut style = (*ctx.style()).clone();
+
+    // Colores base
+    style.visuals.panel_fill           = BG_DEEP;
+    style.visuals.window_fill          = BG_CARD;
+    style.visuals.extreme_bg_color     = BG_SURFACE;
+    style.visuals.faint_bg_color       = BG_SURFACE;
+    style.visuals.code_bg_color        = BG_SURFACE;
+    style.visuals.override_text_color  = Some(TEXT_PRIMARY);
+
+    // Widgets
+    style.visuals.widgets.inactive.bg_fill        = BG_SURFACE;
+    style.visuals.widgets.inactive.fg_stroke      = Stroke::new(1.0_f32, BORDER_SUBTLE);
+    style.visuals.widgets.hovered.bg_fill         = BG_SURFACE2;
+    style.visuals.widgets.hovered.fg_stroke       = Stroke::new(1.5_f32, ACCENT_CYAN);
+    style.visuals.widgets.active.bg_fill          = ACCENT_PURPLE;
+    style.visuals.widgets.active.fg_stroke        = Stroke::new(1.5_f32, ACCENT_CYAN);
+    style.visuals.widgets.noninteractive.bg_fill  = BG_CARD;
+    style.visuals.widgets.noninteractive.fg_stroke = Stroke::new(1.0_f32, BORDER_SUBTLE);
+
+    // Bordes de ventana
+    style.visuals.window_stroke = Stroke::new(1.0_f32, BORDER_SUBTLE);
+
+    // Spacing
+    style.spacing.item_spacing   = Vec2::new(8.0, 6.0);
+    style.spacing.button_padding = Vec2::new(10.0, 6.0);
+
+    ctx.set_style(style);
+}
+
+// ─── Entry point ─────────────────────────────────────────────────────────────
+
+fn main() -> eframe::Result {
+    let native_options = NativeOptions {
+        viewport: ViewportBuilder::default()
+            .with_title("ScreenSeal — Desktop Pro")
+            .with_inner_size([1100.0, 700.0])
+            .with_min_inner_size([900.0, 600.0])
+            .with_icon(eframe::icon_data::from_png_bytes(
+                include_bytes!("../assets/icon.png")
+            ).unwrap_or_default()),
+        ..Default::default()
     };
 
-    enviar_mensaje(&mut stream, &hello)
-        .expect("No se pudo enviar Hello");
-
-    println!("Host -> Cliente: {:?}", hello);
-
-    // 2. Esperar respuesta del cliente
-    let respuesta =
-        recibir_mensaje(&mut stream)
-            .expect("No se pudo recibir HelloAck");
-
-    println!("Cliente -> Host: {:?}", respuesta);
-
-    // 3. Validar respuesta
-    match respuesta {
-        Message::HelloAck { version } if version == VERSION_PROTOCOLO => {
-            println!("Handshake aceptado");
-        }
-
-        Message::HelloAck { version } => {
-            println!(
-                "Versión incompatible. Host: {}, Cliente: {}",
-                VERSION_PROTOCOLO,
-                version
-            );
-        }
-
-        otro_mensaje => {
-            println!(
-                "Se esperaba HelloAck, pero llegó: {:?}",
-                otro_mensaje
-            );
-        }
-    }
-}
-
-fn cliente() {
-    thread::sleep(Duration::from_millis(500));
-
-    let mut stream =
-        TcpStream::connect("127.0.0.1:7878")
-            .expect("No se pudo conectar al host");
-
-    println!("Cliente conectado al host");
-
-    // 1. Recibir saludo del host
-    let mensaje =
-        recibir_mensaje(&mut stream)
-            .expect("No se pudo recibir Hello");
-
-    println!("Cliente recibió: {:?}", mensaje);
-
-    // 2. Revisar la versión recibida
-    match mensaje {
-        Message::Hello { version } => {
-            if version == VERSION_PROTOCOLO {
-                let respuesta = Message::HelloAck {
-                    version: VERSION_PROTOCOLO,
-                };
-
-                enviar_mensaje(&mut stream, &respuesta)
-                    .expect("No se pudo enviar HelloAck");
-
-                println!("Cliente -> Host: {:?}", respuesta);
-                println!("Handshake del cliente aceptado");
-            } else {
-                println!(
-                    "Versión incompatible. Host: {}, Cliente: {}",
-                    version,
-                    VERSION_PROTOCOLO
-                );
-            }
-        }
-
-        otro_mensaje => {
-            println!(
-                "Se esperaba Hello, pero llegó: {:?}",
-                otro_mensaje
-            );
-        }
-    }
-}
-
-fn main() {
-    let servidor_hilo = thread::spawn(servidor);
-    let cliente_hilo = thread::spawn(cliente);
-
-    servidor_hilo.join().unwrap();
-    cliente_hilo.join().unwrap();
-
-    println!("Comunicación finalizada correctamente");
+    eframe::run_native(
+        "ScreenSeal",
+        native_options,
+        Box::new(|_cc| Ok(Box::new(ScreenSealApp::default()))),
+    )
 }
