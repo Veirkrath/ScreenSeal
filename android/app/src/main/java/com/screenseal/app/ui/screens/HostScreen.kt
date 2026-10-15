@@ -138,8 +138,6 @@ private fun HostTopBar() {
                     fontSize   = 16.sp,
                     fontWeight = FontWeight.Bold,
                 )
-                Spacer(modifier = Modifier.width(6.dp))
-                ProBadge()
             }
             Text(
                 text     = "HOST MONITOR PRINCIPAL",
@@ -178,25 +176,6 @@ private fun HostTopBar() {
         ) {
             Text(text = "U", color = Color.White, fontWeight = FontWeight.Bold)
         }
-    }
-}
-
-@Composable
-private fun ProBadge() {
-    Box(
-        modifier = Modifier
-            .background(
-                brush = Brush.horizontalGradient(listOf(AccentPurple, AccentGradientEnd)),
-                shape = RoundedCornerShape(4.dp),
-            )
-            .padding(horizontal = 6.dp, vertical = 2.dp),
-    ) {
-        Text(
-            text       = "PRO",
-            color      = Color.White,
-            fontSize   = 10.sp,
-            fontWeight = FontWeight.Bold,
-        )
     }
 }
 

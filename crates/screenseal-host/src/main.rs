@@ -13,7 +13,7 @@ use ui::{
         quick_connect::render as render_quick_connect,
         virtual_monitors::{VirtualMonitorsState, render as render_virtual_monitors},
     },
-    widgets::{nav_tab, pro_badge, status_badge},
+    widgets::{nav_tab, status_badge},
 };
 
 // ─── App principal ────────────────────────────────────────────────────────────
@@ -52,8 +52,7 @@ impl eframe::App for ScreenSealApp {
                 ui.horizontal(|ui| {
                     // Logo
                     ui.label(RichText::new("ScreenSeal").color(TEXT_PRIMARY).size(15.0).strong());
-                    pro_badge(ui);
-                    ui.label(RichText::new("DESKTOP PRO").color(TEXT_MUTED).size(9.0));
+
 
                     ui.add_space(20.0);
 
